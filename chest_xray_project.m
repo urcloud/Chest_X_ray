@@ -33,6 +33,16 @@ disp("이미지 크기:");
 disp(size(img));
 
 
+%% 클래스 가중치 계산
+labelCount = countEachLabel(imdsTrain);
+numNormal = labelCount{strcmp(labelCount.Label, 'NORMAL'), 'Count'};
+numPneumonia = labelCount{strcmp(labelCount.Label, 'PNEUMONIA'), 'Count'};
+
+weightNormal = 1;
+weightPneumonia = numNormal / numPneumonia;
+classWeights = [weightNormal, weightPneumonia];
+
+
 %% 5. CNN 아키텍처 정의
 layers = [
     imageInputLayer([224 224 1], 'Name', 'input')
@@ -59,7 +69,7 @@ layers = [
 
     fullyConnectedLayer(numel(unique(imdsTrain.Labels)), 'Name', 'fc')
     softmaxLayer('Name', 'softmax')
-    classificationLayer('Name', 'classoutput')
+    WeightedClassificationLayer(classWeights, 'weighted_output')
 ];
 
 
@@ -118,3 +128,39 @@ title('t-SNE 시각화');
 xlabel('Dimension 1');
 ylabel('Dimension 2');
 grid on;
+
+
+%% 12. 정밀도(Precision), 재현율(Recall), F1-score 계산 및 출력
+
+[confMat, order] = confusionmat(YTest, YPred);
+
+numClasses = size(confMat, 1);
+precision = zeros(numClasses, 1);
+recall = zeros(numClasses, 1);
+f1score = zeros(numClasses, 1);
+
+for i = 1:numClasses
+    TP = confMat(i, i);
+    FP = sum(confMat(:, i)) - TP;
+    FN = sum(confMat(i, :)) - TP;
+    
+    precision(i) = TP / (TP + FP + eps);
+    recall(i) = TP / (TP + FN + eps);
+    f1score(i) = 2 * (precision(i) * recall(i)) / (precision(i) + recall(i) + eps);
+end
+
+disp('=== 분류 성능 (클래스별) ===');
+for i = 1:numClasses
+    fprintf('클래스: %s\n', string(order(i)));
+    fprintf('  Precision: %.2f%%\n', precision(i) * 100);
+    fprintf('  Recall   : %.2f%%\n', recall(i) * 100);
+    fprintf('  F1-Score : %.2f%%\n\n', f1score(i) * 100);
+end
+
+macroPrecision = mean(precision);
+macroRecall = mean(recall);
+macroF1 = mean(f1score);
+fprintf('=== 전체 평균 (Macro-Averaged) ===\n');
+fprintf('  Precision: %.2f%%\n', macroPrecision * 100);
+fprintf('  Recall   : %.2f%%\n', macroRecall * 100);
+fprintf('  F1-Score : %.2f%%\n', macroF1 * 100);
